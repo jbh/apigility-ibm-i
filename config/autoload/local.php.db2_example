@@ -1,0 +1,33 @@
+<?php
+return [
+    'db' => [
+        'adapters' => [
+            'ibmdb' => [
+                'database' => 'SXXXXXXX',
+                'driver' => 'IbmDb2',
+                'username' => 'user',
+                'password' => 'password',
+                'driver_options' => [
+                    'i5_naming' => 1,
+                    'db2_attr_case' => DB2_CASE_LOWER,
+                ],
+            ],
+        ],
+    ],
+    'zf-mvc-auth' => [
+        'authentication' => [
+            'adapters' => [
+                'oauth-name' => [
+                    'adapter' => \ZF\MvcAuth\Authentication\OAuth2Adapter::class,
+                    'storage' => [
+                        'adapter' => \pdo::class,
+                        'dsn' => 'ibm:SXXXXXXX',
+                        'route' => '/oauth',
+                        'username' => 'user',
+                        'password' => 'password',
+                    ],
+                ],
+            ],
+        ],
+    ],
+];
