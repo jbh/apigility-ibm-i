@@ -67,7 +67,7 @@ class EcommerceUserResource extends AbstractResourceListener
      */
     public function fetchAll($params = [])
     {
-        return $this->mapper->fetchAll();
+        return $this->mapper->fetchAll($params);
     }
 
     /**

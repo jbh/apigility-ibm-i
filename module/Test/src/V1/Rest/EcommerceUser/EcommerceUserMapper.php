@@ -1,90 +1,164 @@
 <?php
 namespace Test\V1\Rest\EcommerceUser;
 
+use Zend\Db\Sql\Sql;
 use Zend\Db\Sql\Select;
+use Zend\Db\Sql\Insert;
+use Zend\Db\Sql\Update;
 use Zend\Db\Sql\Delete;
+use Zend\Db\Sql\TableIdentifier;
+use Zend\Db\Sql\Predicate\Expression;
 use Zend\Db\Adapter\Adapter;
 use SA\Adapter\LowercaseDbSelect;
 
 class EcommerceUserMapper
 {
     protected $db;
+    protected $sql;
     protected $table;
 
     public function __construct(Adapter $db)
     {
         $this->db = $db;
-        $this->table = new \Zend\Db\Sql\TableIdentifier('ECOMMERCE_USERS', 'APIGILITY');
+        $this->sql = new Sql($db);
+        $this->table = new TableIdentifier('ECOMMERCE_USERS', 'APIGILITY');
     }
 
-    public function fetchAll()
+    public function fetchAll($filters = [])
     {
-        $select = new Select($this->table);
+        $select = empty($filters)
+            ? $this->getNewSimpleSelect()
+            : $this->applyFilters($this->getNewSimpleSelect(), $filters);
+
         $paginatorAdapter = new LowercaseDbSelect($select, $this->db);
         $collection = new EcommerceUserCollection($paginatorAdapter);
         return $collection;
     }
 
-    public function fetchOne($userId)
+    public function fetchOne($id)
     {
-        $sql = 'SELECT * FROM APIGILITY.ECOMMERCE_USERS WHERE id = ?';
-        $resultset = $this->db->query($sql, array($userId));
-        $data = $resultset->toArray();
-        if (!$data) {
+        $select = $this->getNewSimpleSelect();
+        $select->where(EcommerceUserFilters::idFilter($id));
+        $statement = $this->sql->prepareStatementForSqlObject($select);
+        $result = $statement->execute();
+        $current = $result->current();
+
+        if (!$current) {
             return false;
         }
 
         $entity = new EcommerceUserEntity();
-        $entity->populate($data[0]);
+        $entity->populate($current);
         return $entity;
     }
 
     public function save($data, $id = 0)
     {
-        $data = (array)$data;
         $parameters = [
-            $data['username'],
-            $data['email'],
-            $data['first_name'],
-            $data['last_name'],
+            $data->username,
+            $data->email,
+            $data->first_name,
+            $data->last_name,
         ];
         if ($id > 0) {
-            $data['id'] = $id;
             array_push($parameters, $id);
         }
 
+        $result = $id > 0 ? $this->update($id, $parameters) : $this->insert($parameters);
+        $id = $this->db->getDriver()->getLastGeneratedValue();
 
-        if (isset($data['id'])) {
-            $sql = <<<SQL
-UPDATE APIGILITY.ECOMMERCE_USERS
-SET USERNAME   = ?,
-    EMAIL      = ?,
-    FIRST_NAME = ?,
-    LAST_NAME  = ?
-WHERE ID = ?
-SQL;
-            $result = $this->db->query($sql, $parameters);
-        } else {
-            $sql = <<<SQL
-INSERT INTO APIGILITY.ECOMMERCE_USERS (USERNAME, EMAIL, FIRST_NAME, LAST_NAME)
-VALUES (?, ?, ?, ?)
-SQL;
+        return $this->fetchOne($id);
+    }
 
-            $result = $this->db->query($sql, $parameters);
-            $data['id'] = $this->db->getDriver()->getLastGeneratedValue();
+    public function update($id, $parameters)
+    {
+        $update = new Update($this->table);
+        $update->set([
+            'USERNAME' => new Expression('?'),
+            'EMAIL' => new Expression('?'),
+            'FIRST_NAME' => new Expression('?'),
+            'LAST_NAME' => new Expression('?'),
+        ]);
+        $update->where(EcommerceUserFilters::idFilter($id));
+        $statement = $this->sql->prepareStatementForSqlObject($update);
 
-        }
+        return $statement->execute($parameters);
+    }
 
-        return $this->fetchOne($data['id']);
+    public function insert($parameters)
+    {
+        $insert = new Insert($this->table);
+        $insert->values([
+            'USERNAME' => new Expression('?'),
+            'EMAIL' => new Expression('?'),
+            'FIRST_NAME' => new Expression('?'),
+            'LAST_NAME' => new Expression('?'),
+        ]);
+        $statement = $this->sql->prepareStatementForSqlObject($insert);
+
+        return $statement->execute($parameters);
     }
 
     public function delete($id)
     {
-        $QQ = new \Zend\Db\Sql\Expression('?');
         $delete = new Delete($this->table);
-        $delete->where(['ID' => $QQ]);
-        $result = $this->db->query($delete->getSqlString(), [$id]);
+        $delete->where(EcommerceUserFilters::idFilter($id));
+        $statement = $this->sql->prepareStatementForSqlObject($delete);
+        $result = $statement->execute();
 
         return $result->getAffectedRows() > 0;
+    }
+
+    /**
+     * Used to keep column selection consistent. Handy when using data methods, like TRIM()
+     * Using TRIM as an example here although it is unnecessary in this context.
+     *
+     * @return array
+     */
+    private function getColumnsForSelect()
+    {
+        return [
+            'ID'          => 'ID',
+            'USERNAME'    => new Expression('TRIM(USERNAME)'),
+            'EMAIL'       => 'EMAIL',
+            'FIRST_NAME'  => 'FIRST_NAME',
+            'LAST_NAME'   => 'LAST_NAME',
+            'CREATED_AT'  => 'CREATED_AT',
+            'MODIFIED_AT' => 'MODIFIED_AT',
+        ];
+    }
+
+    private function getNewSimpleSelect()
+    {
+        $select = new Select($this->table);
+        $select->columns($this->getColumnsForSelect());
+
+        return $select;
+    }
+
+    private function applyFilters(Select $select, $filters)
+    {
+        $keys = array_keys((array)$filters);
+        $firstKey = count($keys) > 0 ? $keys[0] : false;
+
+        if (array_key_exists('sort', $filters)) {
+            // Example sort: ?sort=username, email DESC
+            $select->order(new Expression($filters['sort']));
+            unset($filters['sort']);
+        }
+
+        $filtersClass = 'Test\V1\Rest\EcommerceUser\EcommerceUserFilters';
+
+        $isCustomFilter = $firstKey
+            && $firstKey !== 'defaultFilter'
+            && method_exists($filtersClass, $firstKey);
+
+        $where = $isCustomFilter                                                  // If this is a custom filter
+            ? call_user_func("{$filtersClass}::{$firstKey}", $filters[$firstKey]) // Apply the custom filter
+            : EcommerceUserFilters::defaultFilter($filters);                      // Else apply default filter
+
+        $select->where($where);
+
+        return $select;
     }
 }

@@ -72,7 +72,11 @@ return [
                 0 => 'GET',
                 1 => 'POST',
             ],
-            'collection_query_whitelist' => [],
+            'collection_query_whitelist' => [
+                0 => 'sort',
+                1 => 'username',
+                2 => 'usersWithUsernameLike',
+            ],
             'page_size' => 25,
             'page_size_param' => null,
             'entity_class' => \Test\V1\Rest\EcommerceUser\EcommerceUserEntity::class,
